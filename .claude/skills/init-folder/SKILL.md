@@ -1,6 +1,6 @@
 ---
 name: init-folder
-description: Initialize a blank folder on Windows for agentic development. Creates git repo, generates smart .gitignore with interactive project type selection, sets up GitHub remote, creates .planning/ folder, installs selected MCP servers, and makes initial baseline commit.
+description: Initialize a blank folder for agentic development. Creates git repo, generates smart .gitignore with interactive project type selection, sets up GitHub remote, creates .planning/ folder, installs selected MCP servers, and makes initial baseline commit.
 ---
 
 <objective>
@@ -8,19 +8,20 @@ Transform a blank folder into a ready-to-code workspace for agentic development 
 </objective>
 
 <prerequisites>
-- **Windows**: PowerShell required
+- **bash**: Required (Works on Linux, macOS, Windows via Git Bash/WSL)
 - **git**: Must be installed and available in PATH
 - **gh CLI**: Recommended for GitHub remote creation (fallback guidance provided if missing)
 - **GitHub auth**: gh CLI must be authenticated (`gh auth login`) for remote creation
+- **jq**: Required for MCP installation (JSON parser for MCP configs)
 </prerequisites>
 
 <quick_start>
 Run this skill in any empty folder where you want to start a new project. The skill will:
-1. Validate prerequisites (git, PowerShell on Windows)
+1. Validate prerequisites (git, bash, jq)
 2. Ask for project type to configure .gitignore appropriately
-3. Scan for existing MCP configurations across projects
+3. Scan for existing MCP configurations across projects (including global)
 4. Offer to install selected MCP servers
-5. Execute PowerShell scripts to perform setup
+5. Execute bash scripts to perform setup
 6. Report results with clear next steps
 </quick_start>
 
@@ -30,33 +31,47 @@ Run this skill in any empty folder where you want to start a new project. The sk
 
 Check that required tools are available:
 
-```powershell
-# Check if running on Windows
-$windowsCheck = [System.Environment]::OSVersion.Platform -eq "Win32NT"
-
+```bash
 # Check if git is available
-$gitCheck = Get-Command git -ErrorAction SilentlyContinue
+if ! command -v git &>/dev/null; then
+    echo "Error: git not found"
+fi
+
+# Check if bash is available
+if ! command -v bash &>/dev/null; then
+    echo "Error: bash not found"
+fi
+
+# Check if jq is available (for MCP installation)
+if ! command -v jq &>/dev/null; then
+    echo "Warning: jq not found - MCP installation will be skipped"
+fi
 
 # Check if gh CLI is available (optional but recommended)
-$ghCheck = Get-Command gh -ErrorAction SilentlyContinue
+if ! command -v gh &>/dev/null; then
+    echo "Warning: gh CLI not found - GitHub remote will be skipped"
+fi
 ```
 
-**If not on Windows:**
-- Error with guidance: "This skill requires Windows. PowerShell script is Windows-specific."
-
 **If git not found:**
-- Error with guidance: "git not found. Install git from https://git-scm.com/download/win"
+- Error with guidance: "git not found. Install from https://git-scm.com/"
+
+**If bash not found:**
+- Error with guidance: "bash not found. This skill requires a bash-compatible shell"
+
+**If jq not found:**
+- Warning but continue: "jq not found. MCP installation will be skipped. Install from https://stedolan.github.io/jq/"
 
 **If gh CLI not found:**
-- Warning but continue: "gh CLI not found. GitHub remote will be skipped. Install gh from https://cli.github.com/ and run `gh auth login` to enable remote creation."
+- Warning but continue: "gh CLI not found. GitHub remote will be skipped. Install from https://cli.github.com/"
 
 ## 2. Gather Project Type
 
-Use AskUserQuestion to determine .gitignore configuration:
+Use AskUserQuestion to determine .gitignore configuration. **Note: This selection configures your .gitignore file with appropriate patterns for the selected project type(s).**
 
 ```xml
 <AskUserQuestion>
-  <question>What type of project is this?</question>
+  <question>Select project type(s) for .gitignore configuration:</question>
   <header>Project Type</header>
   <multiSelect>true</multiSelect>
   <options>
@@ -102,58 +117,52 @@ Collect selected project types into a comma-separated string for the script.
 
 Search for existing MCP server configurations across projects to present installation options:
 
-```powershell
-# Scan common locations for MCP configurations
-$claudeConfigPath = "$env:USERPROFILE\.claude\claude.json"
-$claudeLocalConfigPath = "$env:USERPROFILE\.claude\claude.local.json"
-$projectSearchPaths = @()
+```bash
+# Get user's home directory
+HOME_DIR="${HOME:-~}"
 
-# Add global config if exists
-if (Test-Path $claudeConfigPath) { $projectSearchPaths += $env:USERPROFILE + "\.claude" }
-if (Test-Path $claudeLocalConfigPath) { $projectSearchPaths += $env:USERPROFILE + "\.claude" }
-
-# Scan recent project directories (last 10 modified)
-$recentProjects = Get-ChildItem -Path "$env:USERPROFILE\source\repos" -Directory -ErrorAction SilentlyContinue |
-    Sort-Object LastWriteTime -Descending |
-    Select-Object -First 10
-
-foreach ($project in $recentProjects) {
-    $configPath = Join-Path $project.FullName ".claude"
-    if (Test-Path $configPath) {
-        $projectSearchPaths += $configPath
-    }
-}
+# Define search paths
+declare -a search_paths=(
+    "$HOME_DIR/.claude"                      # Global Claude config
+    "$HOME_DIR/source/repos/*/.claude"       # Project configs (recursive)
+)
 
 # Discover available MCP servers
-$availableMCPs = @{}
-foreach ($path in $projectSearchPaths) {
-    $configFiles = @(
-        (Join-Path $path "claude.json"),
-        (Join-Path $path "claude.local.json")
-    )
+declare -A available_mcps
 
-    foreach ($file in $configFiles) {
-        if (Test-Path $file) {
-            try {
-                $config = Get-Content $file -Raw | ConvertFrom-Json
-                if ($config.mcpServers) {
-                    foreach ($serverName in $config.mcpServers.PSObject.Properties.Name) {
-                        if (-not $availableMCPs.ContainsKey($serverName)) {
-                            $serverConfig = $config.mcpServers.$serverName
-                            $availableMCPs[$serverName] = @{
-                                Source = $file
-                                Type = if ($file -like "*.local.json") { "Has credentials" } else { "Config only" }
-                                Command = if ($serverConfig.command) { $serverConfig.command } else { "N/A" }
-                            }
-                        }
-                    }
-                }
-            } catch {
-                # Skip invalid JSON
-            }
-        }
-    }
-}
+for path in "${search_paths[@]}"; do
+    # Handle glob expansion
+    for expanded_path in $path; do
+        [[ ! -d "$expanded_path" ]] && continue
+
+        # Check for config files
+        for config_file in "$expanded_path"/claude.json "$expanded_path"/claude.local.json \
+                          "$expanded_path"/.mcp.json "$expanded_path"/.mcp.local.json; do
+            [[ ! -f "$config_file" ]] && continue
+
+            # Extract MCP server names using jq (suppress errors)
+            while IFS= read -r server_name; do
+                [[ -z "$server_name" ]] && continue
+                [[ ! "${available_mcps[$server_name]+isset}" ]] || continue  # Skip duplicates
+
+                # Get server config to determine type
+                server_config=$(jq -r ".mcpServers[\"$server_name\"]" "$config_file" 2>/dev/null)
+                command=$(echo "$server_config" | jq -r '.command // ""' 2>/dev/null)
+
+                # Determine installation type
+                if [[ "$command" == "npx" ]]; then
+                    install_type="npx"
+                elif echo "$server_config" | jq -e '.env' >/dev/null 2>&1; then
+                    install_type="configured"
+                else
+                    install_type="global"
+                fi
+
+                available_mcps["$server_name"]="$config_file|$install_type"
+            done < <(jq -r '.mcpServers | keys[]' "$config_file" 2>/dev/null)
+        done
+    done
+done
 ```
 
 ## 4. Offer MCP Installation
@@ -169,7 +178,7 @@ If MCP servers were discovered, present them to the user with their installation
     <!-- Dynamically populate discovered MCPs -->
     <option>
       <label>mcp-server-name</label>
-      <description>Type: [npx/global/source] • From: [source path]</description>
+      <description>Type: [npx/global/configured] • From: [source path]</description>
     </option>
   </options>
 </AskUserQuestion>
@@ -177,52 +186,50 @@ If MCP servers were discovered, present them to the user with their installation
 
 **Installation Types:**
 - **npx**: Runs directly from npm registry (e.g., `npx @modelcontextprotocol/server-example`)
-- **global**: Installed globally via npm (e.g., `npm install -g @some/package`)
-- **source**: Installed in `~/.claude/mcp/` (like firefly-iii)
+- **global**: Installed globally via npm or other package manager
+- **configured**: Has environment variables/credentials (requires .local.json)
 
 If no MCPs discovered or user declines, skip installation step.
 
-## 5. Execute PowerShell Script
+## 5. Execute Bash Script
 
 Run the initialization script with collected parameters:
 
-```powershell
-pwsh -ExecutionPolicy Bypass -File .claude/skills/init-folder/scripts/initialize.ps1 `
-  -ProjectTypes "Node.js,Python" `
-  -GitHubUsername "adfra"
+```bash
+bash .claude/skills/init-folder/scripts/initialize.sh \
+  --project-types "Node.js,Python" \
+  --github-username "adfra"
 ```
 
 Parameters:
-- **ProjectTypes**: Comma-separated list of selected project types
-- **GitHubUsername**: Hardcoded to "adfra" per requirements
-- **CurrentDirectory**: Optionally specify target folder (defaults to current)
+- **--project-types**: Comma-separated list of selected project types
+- **--github-username**: Hardcoded to "adfra" per requirements
 
 ## 6. Install MCP Servers (If Selected)
 
 If user selected MCP servers in step 4, install them:
 
-```powershell
-$selectedMCPs = "server1,server2"  # From AskUserQuestion results
-$sourcePaths = "path1,path2,path3"  # Discovered configs
+```bash
+selected_mcps="server1,server2"  # From AskUserQuestion results
+source_paths="path1,path2,path3"  # Discovered configs
 
-pwsh -ExecutionPolicy Bypass -File .claude/skills/init-folder/scripts/install-mcps.ps1 `
-  -SelectedMCPs $selectedMCPs `
-  -SourcePaths $sourcePaths
+bash .claude/skills/init-folder/scripts/install-mcps.sh \
+  --selected-mcps "$selected_mcps" \
+  --source-paths "$source_paths"
 ```
 
 Parameters:
-- **SelectedMCPs**: Comma-separated list of MCP server names selected by user
-- **SourcePaths**: Comma-separated list of paths containing MCP configurations
-- **CurrentDirectory**: Target project folder (defaults to current)
+- **--selected-mcps**: Comma-separated list of MCP server names selected by user
+- **--source-paths**: Comma-separated list of paths containing MCP configurations
 
 The script will:
-- Create `.claude/claude.json` with non-sensitive MCP configs
-- Create `.claude/claude.local.json` with credentials
-- Update `.gitignore` to include `*.local` pattern
+- Create `.mcp.json` with non-sensitive MCP configs
+- Create `.mcp.local.json` with credentials
+- Update `.gitignore` to include `*.local.json` pattern
 
 ## 7. Handle Script Output
 
-The script will return:
+The script returns structured output:
 
 **Success:**
 ```
@@ -249,12 +256,6 @@ The script will return:
   → .mcp.local.json created with credentials (gitignored)
 ```
 
-**Failure:**
-```
-✗ git init failed: [error message]
-  Fix: [actionable guidance]
-```
-
 ## 8. Report Results
 
 Present the output to the user with clear next steps:
@@ -266,7 +267,7 @@ Present the output to the user with clear next steps:
 
 Your project is ready! Next steps:
 
-1. Start coding: .
+1. Start coding
 2. Plan your work: /gsd-discuss-phase 1
 3. View status: git status
 
@@ -284,20 +285,25 @@ MCP servers installed: server1, server2
 
 | Error | Cause | Guidance |
 |-------|-------|----------|
-| "PowerShell not found" | Not on Windows or PS not in PATH | This skill requires Windows. Verify OS and install PowerShell Core if needed |
-| "git: command not found" | git not installed or not in PATH | Install git from https://git-scm.com/download/win |
+| "git: command not found" | git not installed or not in PATH | Install from https://git-scm.com/ |
+| "bash: command not found" | bash not available | This skill requires bash. On Windows, use Git Bash or WSL |
+| "jq: command not found" | jq not installed | Install from https://stedolan.github.io/jq/; MCP installation will be skipped |
 | "gh: command not found" | gh CLI not installed | Install from https://cli.github.com/; skill will continue without remote creation |
 | "gh not authenticated" | User hasn't run `gh auth login` | Run `gh auth login` to authenticate, then re-run skill |
-| "Permission denied" | Can't write to .git/ or .gitignore | Check folder permissions, run as administrator if needed |
-| "Repository already exists" | Folder already has a .git/ directory | This folder is already initialized. Use a different folder or `rm -rf .git` first |
-| "MCP config not found" | No existing MCP configurations discovered | MCP installation is optional. Continue without it or configure MCPs manually in .claude/ |
-| "Invalid MCP JSON" | Corrupted or malformed MCP configuration file | Check the source MCP configuration file for valid JSON syntax |
-| "Failed to write .claude/" | Insufficient permissions to create .claude/ | Check folder permissions, run as administrator if needed |
+| "Permission denied" | Can't write to .git/ or .gitignore | Check folder permissions |
+| "Repository already exists" | Folder already has a .git/ directory | Use a different folder or `rm -rf .git` first |
+| "Invalid JSON in MCP config" | Corrupted or malformed MCP configuration file | Check the source MCP configuration file for valid JSON syntax |
 
 All errors include:
 - What went wrong (specific error message)
 - Why it failed (root cause)
 - How to fix it (actionable next step)
+
+**Script Error Handling:**
+- Scripts use `set -euo pipefail` for strict error handling
+- Command output is suppressed where appropriate to avoid cluttering the chat
+- Errors are captured and reported with actionable guidance
+- Long command errors are structured and don't overflow into the chat
 
 </error_handling>
 
@@ -329,13 +335,32 @@ The .gitignore includes:
 *.key
 credentials.json
 auth.json
+.secrets
+*.creds
 
 # OS files
 .DS_Store
 Thumbs.db
+Desktop.ini
+
+# IDE/Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
 
 # GSD workflow
 .planning/
+
+# OMC (Oh My Claude Code) session data
+.omc/
+
+# Build artifacts (general)
+dist/
+build/
+out/
+*.log
 ```
 
 **Project-specific extensions** (based on user selection):
@@ -354,11 +379,11 @@ Thumbs.db
 ```
 User: /init-folder
 
-[Claude validates Windows, git, gh]
-[Claude asks project type]
+[Claude validates git, bash, jq]
+[Claude asks project type for .gitignore]
 User: [selects Node.js, TypeScript]
 
-[Claude executes PowerShell script]
+[Claude executes bash script]
 
 ✓ Repository initialized
 ✓ .gitignore created (Node.js, TypeScript)
@@ -390,16 +415,16 @@ User: /init-folder
 ```
 User: /init-folder
 
-[Claude validates Windows, git, gh]
-[Claude asks project type]
+[Claude validates git, bash, jq]
+[Claude asks project type for .gitignore]
 User: [selects Node.js, TypeScript]
 
 [Claude scans for MCP configurations]
 Found 2 MCP servers available:
 1. @modelcontextprotocol/server-github (npx)
    No installation needed - runs via npx
-2. firefly-iii (source)
-   Already installed in ~/.claude/mcp/firefly-iii/
+2. firefly-iii (configured)
+   Has credentials in source config
 
 [Claude asks which MCP servers to install]
 User: [selects @modelcontextprotocol/server-github, firefly-iii]
@@ -410,8 +435,8 @@ User: [selects @modelcontextprotocol/server-github, firefly-iii]
 ✓ GitHub remote created: https://github.com/adfra/my-new-project
 ✓ Initial commit made
 ✓ MCP servers installed: @modelcontextprotocol/server-github, firefly-iii
-  → .mcp.json created with 2 server(s)
-  → .mcp.local.json created with credentials
+  → .mcp.json created with 1 server(s)
+  → .mcp.local.json created with 1 server(s)
 ```
 
 </examples>
@@ -429,4 +454,8 @@ Skill is successful when:
   - [ ] *.local.json pattern added to .gitignore
 - [ ] Clear error messages with actionable guidance (if any step fails)
 - [ ] User knows next steps (start coding or run GSD planning)
+- [ ] Project type selection clearly indicates it's for .gitignore configuration
+- [ ] MCP scan picks up global and installed but inactive servers
+- [ ] Scripts work on Linux, macOS, and Windows (via Git Bash/WSL)
+- [ ] Long command errors don't overflow into the chat
 </success_criteria>
