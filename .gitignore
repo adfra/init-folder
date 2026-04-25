@@ -1,0 +1,36 @@
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Credentials
+*.pem
+*.key
+credentials.json
+auth.json
+.secrets
+*.creds
+
+# OS files
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# IDE/Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# GSD workflow
+.planning/
+
+# OMC (Oh My Claude Code) session data
+.omc/
+
+# Build artifacts (general)
+dist/
+build/
+out/
+*.log

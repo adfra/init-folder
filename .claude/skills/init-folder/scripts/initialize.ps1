@@ -90,6 +90,9 @@ Desktop.ini
 # GSD workflow
 .planning/
 
+# OMC (Oh My Claude Code) session data
+.omc/
+
 # Build artifacts (general)
 dist/
 build/

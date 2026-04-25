@@ -1,0 +1,23 @@
+{
+    "permissions": {
+        "allow": [
+            "Bash(ls:*)",
+            "Bash(npm run check:*)",
+            "Bash(cat:*)",
+            "Bash(git add:*)",
+            "Bash(find:*)",
+            "Bash(dir:*)",
+            "Bash(psql:*)",
+            "mcp__ide__getDiagnostics",
+            "Bash(wc:*)",
+            "Bash(grep:*)",
+            "WebSearch",
+            "Bash(npx svelte-check:*)",
+            "Bash(git show:*)",
+            "Bash(npm view:*)",
+            "Bash(Select-String -Pattern \"GroupAvailabilityTable|Tooltip\" -Context 2,2)"
+        ],
+        "deny": [
+        ]
+    }
+}
