@@ -385,6 +385,35 @@ User: /init-folder
 ✓ Initial commit made
 ```
 
+## With MCP Server Installation
+
+```
+User: /init-folder
+
+[Claude validates Windows, git, gh]
+[Claude asks project type]
+User: [selects Node.js, TypeScript]
+
+[Claude scans for MCP configurations]
+Found 2 MCP servers available:
+1. @modelcontextprotocol/server-github (npx)
+   No installation needed - runs via npx
+2. firefly-iii (source)
+   Already installed in ~/.claude/mcp/firefly-iii/
+
+[Claude asks which MCP servers to install]
+User: [selects @modelcontextprotocol/server-github, firefly-iii]
+
+✓ Repository initialized
+✓ .gitignore created (Node.js, TypeScript)
+✓ .planning/ folder created
+✓ GitHub remote created: https://github.com/adfra/my-new-project
+✓ Initial commit made
+✓ MCP servers installed: @modelcontextprotocol/server-github, firefly-iii
+  → .mcp.json created with 2 server(s)
+  → .mcp.local.json created with credentials
+```
+
 </examples>
 
 <success_criteria>
