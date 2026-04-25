@@ -26,14 +26,8 @@ function Write-Status {
 try {
     Set-Location $CurrentDirectory
 
-    # Create .claude directory if it doesn't exist
-    $claudeDir = ".claude"
-    if (-not (Test-Path $claudeDir)) {
-        New-Item -ItemType Directory -Path $claudeDir -Force | Out-Null
-    }
-
     # Initialize empty config structures
-    $claudeConfig = @{ mcpServers = @{} }
+    $mcpConfig = @{ mcpServers = @{} }
     $localConfig = @{ mcpServers = @{} }
 
     # Parse source paths and selected MCPs
@@ -50,12 +44,12 @@ try {
             continue
         }
 
-        # Look for claude.json or claude.local.json
+        # Look for .mcp.json or .mcp.local.json
         $configFiles = @(
+            (Join-Path $path ".mcp.json"),
+            (Join-Path $path ".mcp.local.json"),
             (Join-Path $path ".claude" "claude.json"),
-            (Join-Path $path ".claude" "claude.local.json"),
-            (Join-Path $path "claude.json"),
-            (Join-Path $path "claude.local.json")
+            (Join-Path $path ".claude" "claude.local.json")
         )
 
         foreach ($configFile in $configFiles) {
@@ -76,10 +70,10 @@ try {
 
                                 if ($hasSensitiveData) {
                                     $localConfig.mcpServers.$serverName = $serverConfig
-                                    Write-Status "  →" "$serverName (credentials → claude.local.json)" "DarkCyan"
+                                    Write-Status "  →" "$serverName (credentials → .mcp.local.json)" "DarkCyan"
                                 } else {
-                                    $claudeConfig.mcpServers.$serverName = $serverConfig
-                                    Write-Status "  →" "$serverName (config → claude.json)" "DarkGreen"
+                                    $mcpConfig.mcpServers.$serverName = $serverConfig
+                                    Write-Status "  →" "$serverName (config → .mcp.json)" "DarkGreen"
                                 }
                             }
                         }
@@ -91,29 +85,29 @@ try {
         }
     }
 
-    # Write claude.json
-    if ($claudeConfig.mcpServers.PSObject.Properties.Count -gt 0) {
-        $claudeJson = $claudeConfig | ConvertTo-Json -Depth 10
-        $claudeJson | Out-File -FilePath (Join-Path $claudeDir "claude.json") -Encoding utf8
-        Write-Status "✓" "Created .claude/claude.json with $($claudeConfig.mcpServers.PSObject.Properties.Count) server(s)" "Green"
+    # Write .mcp.json
+    if ($mcpConfig.mcpServers.PSObject.Properties.Count -gt 0) {
+        $mcpJson = $mcpConfig | ConvertTo-Json -Depth 10
+        $mcpJson | Out-File -FilePath ".mcp.json" -Encoding utf8
+        Write-Status "✓" "Created .mcp.json with $($mcpConfig.mcpServers.PSObject.Properties.Count) server(s)" "Green"
     } else {
         Write-Host "  No non-sensitive MCP configurations to write" -ForegroundColor DarkGray
     }
 
-    # Write claude.local.json
+    # Write .mcp.local.json
     if ($localConfig.mcpServers.PSObject.Properties.Count -gt 0) {
         $localJson = $localConfig | ConvertTo-Json -Depth 10
-        $localJson | Out-File -FilePath (Join-Path $claudeDir "claude.local.json") -Encoding utf8
-        Write-Status "✓" "Created .claude/claude.local.json with $($localConfig.mcpServers.PSObject.Properties.Count) server(s)" "Green"
+        $localJson | Out-File -FilePath ".mcp.local.json" -Encoding utf8
+        Write-Status "✓" "Created .mcp.local.json with $($localConfig.mcpServers.PSObject.Properties.Count) server(s)" "Green"
 
-        # Ensure *.local is in .gitignore
+        # Ensure *.local.json is in .gitignore
         $gitignorePath = ".gitignore"
         if (Test-Path $gitignorePath) {
             $gitignoreContent = Get-Content $gitignorePath -Raw
-            if ($gitignoreContent -notmatch "\*\.local") {
-                $gitignoreContent += "`n# Local Claude configurations`n*.local`n*.local.json`n"
+            if ($gitignoreContent -notmatch "\*\.local\.json") {
+                $gitignoreContent += "`n# Local MCP configurations`n*.local.json`n"
                 $gitignoreContent | Out-File -FilePath $gitignorePath -Encoding utf8
-                Write-Status "✓" "Updated .gitignore with *.local pattern" "Green"
+                Write-Status "✓" "Updated .gitignore with *.local.json pattern" "Green"
             }
         }
     } else {
@@ -121,7 +115,7 @@ try {
     }
 
     # Summary
-    $totalInstalled = $claudeConfig.mcpServers.PSObject.Properties.Count + $localConfig.mcpServers.PSObject.Properties.Count
+    $totalInstalled = $mcpConfig.mcpServers.PSObject.Properties.Count + $localConfig.mcpServers.PSObject.Properties.Count
 
     Write-Host "`n" -NoNewline
     Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" -ForegroundColor Cyan
@@ -130,7 +124,7 @@ try {
     Write-Host "`nInstalled $totalInstalled MCP server(s)" -ForegroundColor Green
 
     if ($localConfig.mcpServers.PSObject.Properties.Count -gt 0) {
-        Write-Host "`n⚠ Credentials are in .claude/claude.local.json (not in git)" -ForegroundColor Yellow
+        Write-Host "`n⚠ Credentials are in .mcp.local.json (not in git)" -ForegroundColor Yellow
     }
 
     Write-Host ""

@@ -227,6 +227,8 @@ The script will return:
 ✓ GitHub remote created: https://github.com/adfra/[folder-name]
 ✓ Initial commit made
 ✓ MCP servers installed: server1, server2
+  → .mcp.json created with non-sensitive configs
+  → .mcp.local.json created with credentials (gitignored)
 ```
 
 **Partial Success (gh CLI missing):**
@@ -238,6 +240,8 @@ The script will return:
   To add remote manually: git remote add origin https://github.com/adfra/[repo-name].git
 ✓ Initial commit made
 ✓ MCP servers installed: server1, server2
+  → .mcp.json created with non-sensitive configs
+  → .mcp.local.json created with credentials (gitignored)
 ```
 
 **Failure:**
@@ -264,7 +268,7 @@ Your project is ready! Next steps:
 Remote: https://github.com/adfra/[repo-name]
 
 MCP servers installed: server1, server2
-⚠ Credentials are in .claude/claude.local.json (not in git)
+⚠ Credentials are in .mcp.local.json (not in git)
 ```
 
 </process>
@@ -301,9 +305,8 @@ project-folder/
 ├── .git/                    # Git repository (created by git init)
 ├── .gitignore               # Smart ignore file with project-specific rules
 ├── .planning/               # Empty folder for GSD workflow
-├── .claude/                 # Claude configuration (if MCPs installed)
-│   ├── claude.json          # MCP server configurations (no credentials)
-│   └── claude.local.json    # MCP credentials (gitignored)
+├── .mcp.json                # MCP server configurations (if MCPs installed, no credentials)
+├── .mcp.local.json          # MCP credentials (gitignored, if MCPs installed)
 └── .git/                    # Initial commit with .gitignore
 ```
 
@@ -387,9 +390,9 @@ Skill is successful when:
 - [ ] Initial commit made (.gitignore committed)
 - [ ] GitHub remote created (if gh CLI available and authenticated)
 - [ ] MCP servers installed (if selected by user)
-  - [ ] .claude/claude.json created with non-sensitive configs
-  - [ ] .claude/claude.local.json created with credentials
-  - [ ] *.local pattern added to .gitignore
+  - [ ] .mcp.json created with non-sensitive configs
+  - [ ] .mcp.local.json created with credentials
+  - [ ] *.local.json pattern added to .gitignore
 - [ ] Clear error messages with actionable guidance (if any step fails)
 - [ ] User knows next steps (start coding or run GSD planning)
 </success_criteria>
