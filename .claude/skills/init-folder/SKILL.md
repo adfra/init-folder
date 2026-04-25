@@ -158,7 +158,7 @@ foreach ($path in $projectSearchPaths) {
 
 ## 4. Offer MCP Installation
 
-If MCP servers were discovered, present them to the user:
+If MCP servers were discovered, present them to the user with their installation type:
 
 ```xml
 <AskUserQuestion>
@@ -169,11 +169,16 @@ If MCP servers were discovered, present them to the user:
     <!-- Dynamically populate discovered MCPs -->
     <option>
       <label>mcp-server-name</label>
-      <description>From: [source path] • Type: [command]</description>
+      <description>Type: [npx/global/source] • From: [source path]</description>
     </option>
   </options>
 </AskUserQuestion>
 ```
+
+**Installation Types:**
+- **npx**: Runs directly from npm registry (e.g., `npx @modelcontextprotocol/server-example`)
+- **global**: Installed globally via npm (e.g., `npm install -g @some/package`)
+- **source**: Installed in `~/.claude/mcp/` (like firefly-iii)
 
 If no MCPs discovered or user declines, skip installation step.
 

@@ -23,6 +23,56 @@ function Write-Status {
     Write-Host "$Symbol $Message" -ForegroundColor $Color
 }
 
+# Helper function to determine MCP server installation type
+function Get-McpInstallType {
+    param(
+        [object]$ServerConfig
+    )
+
+    $command = $ServerConfig.command
+    $args = $ServerConfig.args
+
+    # npx-based servers
+    if ($command -eq "npx" -or $args -match "npx") {
+        return "npx"
+    }
+
+    # Check if it's in ~/.claude/mcp/ (source installation)
+    if ($args -match "\.claude[/\\]mcp[/\\]") {
+        return "source"
+    }
+
+    # Global npm packages
+    if ($command -eq "node" -or $command -eq "npm") {
+        return "global"
+    }
+
+    return "unknown"
+}
+
+# Helper function to suggest installation command
+function Get-InstallSuggestion {
+    param(
+        [string]$ServerName,
+        [string]$InstallType
+    )
+
+    switch ($InstallType) {
+        "npx" {
+            return "No installation needed - runs via npx"
+        }
+        "source" {
+            return "Already installed in ~/.claude/mcp/$ServerName/"
+        }
+        "global" {
+            return "Install with: npm install -g $ServerName"
+        }
+        default {
+            return "Manual installation required"
+        }
+    }
+}
+
 try {
     Set-Location $CurrentDirectory
 
@@ -65,16 +115,23 @@ try {
 
                             # Check if this MCP was selected
                             if ($mcpList -contains $serverName) {
+                                # Determine installation type
+                                $installType = Get-McpInstallType -ServerConfig $serverConfig
+
                                 # Determine if it has sensitive data (environment variables, secrets)
                                 $hasSensitiveData = $serverConfig.PSObject.Properties.Name -match "env|password|secret|token|key|credential" -or $configFile -like "*.local.json"
 
                                 if ($hasSensitiveData) {
                                     $localConfig.mcpServers.$serverName = $serverConfig
-                                    Write-Status "  →" "$serverName (credentials → .mcp.local.json)" "DarkCyan"
+                                    Write-Status "  →" "$serverName ($installType → .mcp.local.json)" "DarkCyan"
                                 } else {
                                     $mcpConfig.mcpServers.$serverName = $serverConfig
-                                    Write-Status "  →" "$serverName (config → .mcp.json)" "DarkGreen"
+                                    Write-Status "  →" "$serverName ($installType → .mcp.json)" "DarkGreen"
                                 }
+
+                                # Show installation suggestion if needed
+                                $suggestion = Get-InstallSuggestion -ServerName $serverName -InstallType $installType
+                                Write-Host "     $suggestion" -ForegroundColor DarkGray
                             }
                         }
                     }
